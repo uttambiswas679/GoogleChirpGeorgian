@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio Transcription Service</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            padding: 40px;
+            max-width: 800px;
+            width: 100%;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .header h1 {
+            color: #333;
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .header p {
+            color: #666;
+            font-size: 1.1rem;
+        }
+
+        .upload-section {
+            border: 3px dashed #ddd;
+            border-radius: 15px;
+            padding: 40px;
+            text-align: center;
+            margin-bottom: 30px;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .upload-section:hover {
+            border-color: #667eea;
+            background-color: #f8f9ff;
+        }
+
+        .upload-section.dragover {
+            border-color: #667eea;
+            background-color: #f0f4ff;
+            transform: scale(1.02);
+        }
+
+        .upload-icon {
+            font-size: 4rem;
+            color: #667eea;
+            margin-bottom: 20px;
+        }
+
+        .upload-text {
+            font-size: 1.2rem;
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .upload-hint {
+            color: #666;
+            font-size: 0.9rem;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .language-section {
+            margin-bottom: 30px;
+        }
+
+        .language-section h3 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 1.3rem;
+        }
+
+        .language-options {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+        }
+
+        .language-option {
+            padding: 15px 25px;
+            border: 2px solid #ddd;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: white;
+            font-weight: 500;
+        }
+
+        .language-option:hover {
+            border-color: #667eea;
+            background-color: #f8f9ff;
+        }
+
+        .language-option.selected {
+            border-color: #667eea;
+            background-color: #667eea;
+            color: white;
+        }
+
+        .submit-btn {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-bottom: 30px;
+        }
+
+        .submit-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .submit-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .progress-section {
+            display: none;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background-color: #f0f0f0;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 15px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        .progress-text {
+            color: #666;
+            font-size: 0.9rem;
+        }
+
+        .result-section {
+            display: none;
+            margin-top: 30px;
+        }
+
+        .result-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        .result-title {
+            color: #333;
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+        }
+
+        .copy-btn, .translate-btn {
+            padding: 8px 15px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.3s ease;
+        }
+
+        .copy-btn:hover, .translate-btn:hover {
+            background: #5a6fd8;
+        }
+
+        .translate-btn {
+            background: #28a745;
+        }
+
+        .translate-btn:hover {
+            background: #218838;
+        }
+
+        .translate-btn:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+
+        .transcript-content {
+            background-color: #f8f9ff;
+            border: 1px solid #e0e6ff;
+            border-radius: 10px;
+            padding: 20px;
+            max-height: 400px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.95rem;
+            line-height: 1.6;
+            color: #333;
+        }
+
+        .transcript-segment {
+            margin-bottom: 15px;
+            padding: 10px;
+            background: white;
+            border-radius: 5px;
+            border-left: 4px solid #667eea;
+        }
+
+        .segment-time {
+            font-size: 0.8rem;
+            color: #666;
+            margin-bottom: 5px;
+        }
+
+        .segment-text {
+            font-weight: 500;
+        }
+
+        .confidence-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            background: #e8f5e8;
+            color: #2d5a2d;
+            border-radius: 10px;
+            font-size: 0.7rem;
+            margin-left: 10px;
+        }
+
+        .translation-section {
+            display: none;
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 2px solid #f0f0f0;
+        }
+
+        .translation-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .translation-title {
+            color: #333;
+            font-size: 1.3rem;
+            font-weight: 600;
+        }
+
+        .translation-content {
+            background-color: #f0f8ff;
+            border: 1px solid #cce5ff;
+            border-radius: 10px;
+            padding: 20px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.95rem;
+            line-height: 1.6;
+            color: #333;
+        }
+
+        .error-message {
+            background-color: #ffe6e6;
+            border: 1px solid #ffcccc;
+            color: #cc0000;
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 20px;
+            text-align: center;
+        }
+
+        .success-message {
+            background-color: #e6ffe6;
+            border: 1px solid #ccffcc;
+            color: #006600;
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 20px;
+            text-align: center;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 20px;
+            }
+
+            .header h1 {
+                font-size: 2rem;
+            }
+
+            .language-options {
+                flex-direction: column;
+            }
+
+            .upload-section {
+                padding: 20px;
+            }
+
+            .action-buttons {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎤 Audio Transcription</h1>
+            <p>Upload your audio file and get accurate transcriptions in multiple languages</p>
+        </div>
+
+        <div class="upload-section" id="uploadSection">
+            <div class="upload-icon">📁</div>
+            <div class="upload-text">Click to upload or drag and drop</div>
+            <div class="upload-hint">Supports MP3, WAV, M4A, and other audio formats</div>
+            <input type="file" id="audioFile" class="file-input" accept="audio/*">
+        </div>
+
+        <div class="language-section">
+            <h3>Select Language:</h3>
+            <div class="language-options">
+                <div class="language-option" data-lang="english">
+                    🇺🇸 English
+                </div>
+                <div class="language-option selected" data-lang="georgian">
+                    🇬🇪 Georgian
+                </div>
+            </div>
+        </div>
+
+        <button class="submit-btn" id="submitBtn" disabled>
+            🚀 Start Transcription
+        </button>
+
+        <div class="progress-section" id="progressSection">
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <div class="progress-text" id="progressText">Processing your audio...</div>
+        </div>
+
+        <div class="result-section" id="resultSection">
+            <div class="result-header">
+                <div class="result-title">📝 Transcription Result</div>
+                <div class="action-buttons">
+                    <button class="translate-btn" id="translateBtn" style="display: none;">🔄 Translate to English</button>
+                    <button class="copy-btn" id="copyBtn">📋 Copy All</button>
+                </div>
+            </div>
+            <div class="transcript-content" id="transcriptContent"></div>
+            
+            <div class="translation-section" id="translationSection">
+                <div class="translation-header">
+                    <div class="translation-title">🌐 English Translation</div>
+                    <button class="copy-btn" id="copyTranslationBtn">📋 Copy Translation</button>
+                </div>
+                <div class="translation-content" id="translationContent"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let selectedLanguage = 'georgian';
+        let currentTaskId = null;
+        let progressInterval = null;
+        let transcriptionData = null;
+
+        // Language selection
+        document.querySelectorAll('.language-option').forEach(option => {
+            option.addEventListener('click', () => {
+                document.querySelectorAll('.language-option').forEach(opt => opt.classList.remove('selected'));
+                option.classList.add('selected');
+                selectedLanguage = option.dataset.lang;
+            });
+        });
+
+        // File upload handling
+        const uploadSection = document.getElementById('uploadSection');
+        const fileInput = document.getElementById('audioFile');
+        const submitBtn = document.getElementById('submitBtn');
+
+        uploadSection.addEventListener('click', () => fileInput.click());
+
+        uploadSection.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadSection.classList.add('dragover');
+        });
+
+        uploadSection.addEventListener('dragleave', () => {
+            uploadSection.classList.remove('dragover');
+        });
+
+        uploadSection.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadSection.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                fileInput.files = files;
+                handleFileSelect();
+            }
+        });
+
+        fileInput.addEventListener('change', handleFileSelect);
+
+        function handleFileSelect() {
+            const file = fileInput.files[0];
+            if (file) {
+                uploadSection.innerHTML = `
+                    <div class="upload-icon">✅</div>
+                    <div class="upload-text">${file.name}</div>
+                    <div class="upload-hint">File size: ${(file.size / 1024 / 1024).toFixed(2)} MB</div>
+                `;
+                submitBtn.disabled = false;
+            }
+        }
+
+        // Submit transcription
+        submitBtn.addEventListener('click', async () => {
+            const file = fileInput.files[0];
+            if (!file) return;
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            const endpoint = selectedLanguage === 'georgian' ? '/transcribe-georgian/' : '/transcribe/';
+
+            try {
+                // Show progress
+                showProgress();
+                
+                // Upload file
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+                
+                if (result.task_id) {
+                    currentTaskId = result.task_id;
+                    pollForResult();
+                } else {
+                    showError('Upload failed: ' + (result.error || 'Unknown error'));
+                }
+            } catch (error) {
+                showError('Network error: ' + error.message);
+            }
+        });
+
+        function showProgress() {
+            document.getElementById('progressSection').style.display = 'block';
+            document.getElementById('resultSection').style.display = 'none';
+            document.getElementById('translationSection').style.display = 'none';
+            submitBtn.disabled = true;
+            
+            // Animate progress bar
+            let progress = 0;
+            progressInterval = setInterval(() => {
+                progress += Math.random() * 15;
+                if (progress > 90) progress = 90;
+                document.getElementById('progressFill').style.width = progress + '%';
+            }, 500);
+        }
+
+        async function pollForResult() {
+            try {
+                const response = await fetch(`/result/${currentTaskId}`);
+                const result = await response.json();
+
+                if (result.status === 'success') {
+                    clearInterval(progressInterval);
+                    document.getElementById('progressFill').style.width = '100%';
+                    document.getElementById('progressText').textContent = 'Transcription completed!';
+                    
+                    setTimeout(() => {
+                        showResult(result.result);
+                    }, 1000);
+                } else if (result.status === 'pending') {
+                    // Continue polling
+                    setTimeout(pollForResult, 2000);
+                } else {
+                    showError('Transcription failed: ' + (result.message || 'Unknown error'));
+                }
+            } catch (error) {
+                showError('Error checking result: ' + error.message);
+            }
+        }
+
+        function showResult(data) {
+            const resultSection = document.getElementById('resultSection');
+            const transcriptContent = document.getElementById('transcriptContent');
+            const translateBtn = document.getElementById('translateBtn');
+            
+            if (data.error) {
+                showError(data.error);
+                return;
+            }
+
+            transcriptionData = data;
+
+            let html = '';
+            if (data.transcription && data.transcription.length > 0) {
+                data.transcription.forEach((segment, index) => {
+                    const confidence = (segment.confidence * 100).toFixed(1);
+                    html += `
+                        <div class="transcript-segment">
+                            <div class="segment-time">
+                                ${segment.start_time} - ${segment.end_time}
+                                <span class="confidence-badge">${confidence}% confidence</span>
+                            </div>
+                            <div class="segment-text">${segment.transcript}</div>
+                        </div>
+                    `;
+                });
+            } else {
+                html = '<p>No transcription results found.</p>';
+            }
+
+            transcriptContent.innerHTML = html;
+            resultSection.style.display = 'block';
+            document.getElementById('progressSection').style.display = 'none';
+            submitBtn.disabled = false;
+
+            // Show translate button only for Georgian transcriptions
+            if (selectedLanguage === 'georgian' && data.transcription && data.transcription.length > 0) {
+                translateBtn.style.display = 'inline-block';
+            } else {
+                translateBtn.style.display = 'none';
+            }
+        }
+
+        // Translation functionality
+        const translateBtn = document.getElementById('translateBtn');
+        if (translateBtn) {
+            translateBtn.addEventListener('click', async () => {
+                if (!transcriptionData || !transcriptionData.transcription) {
+                    showError('No transcription data available for translation');
+                    return;
+                }
+
+                const translateBtn = document.getElementById('translateBtn');
+                translateBtn.disabled = true;
+                translateBtn.textContent = '🔄 Translating...';
+
+                try {
+                    // Combine all transcript text
+                    const fullText = transcriptionData.transcription
+                        .map(segment => segment.transcript)
+                        .join(' ');
+
+                    const response = await fetch('/translate/', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            text: fullText,
+                            source_language: 'ka',
+                            target_language: 'en'
+                        })
+                    });
+
+                    const result = await response.json();
+
+                    if (result.translation) {
+                        showTranslation(result.translation);
+                    } else {
+                        showError('Translation failed: ' + (result.error || 'Unknown error'));
+                    }
+                } catch (error) {
+                    showError('Translation error: ' + error.message);
+                } finally {
+                    translateBtn.disabled = false;
+                    translateBtn.textContent = '🔄 Translate to English';
+                }
+            });
+        }
+
+        function showTranslation(translation) {
+            const translationSection = document.getElementById('translationSection');
+            const translationContent = document.getElementById('translationContent');
+            
+            translationContent.innerHTML = `
+                <div class="transcript-segment">
+                    <div class="segment-text">${translation}</div>
+                </div>
+            `;
+            
+            translationSection.style.display = 'block';
+        }
+
+        function showError(message) {
+            clearInterval(progressInterval);
+            document.getElementById('progressSection').style.display = 'none';
+            submitBtn.disabled = false;
+
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'error-message';
+            errorDiv.textContent = message;
+            
+            const container = document.querySelector('.container');
+            container.appendChild(errorDiv);
+            
+            setTimeout(() => errorDiv.remove(), 5000);
+        }
+
+        // Copy functionality
+        const copyBtn = document.getElementById('copyBtn');
+        if (copyBtn) {
+            copyBtn.addEventListener('click', () => {
+                const transcriptContent = document.getElementById('transcriptContent');
+                const text = transcriptContent.innerText;
+                
+                navigator.clipboard.writeText(text).then(() => {
+                    const copyBtn = document.getElementById('copyBtn');
+                    const originalText = copyBtn.textContent;
+                    copyBtn.textContent = '✅ Copied!';
+                    setTimeout(() => {
+                        copyBtn.textContent = originalText;
+                    }, 2000);
+                });
+            });
+        }
+
+        const copyTranslationBtn = document.getElementById('copyTranslationBtn');
+        if (copyTranslationBtn) {
+            copyTranslationBtn.addEventListener('click', () => {
+                const translationContent = document.getElementById('translationContent');
+                const text = translationContent.innerText;
+                
+                navigator.clipboard.writeText(text).then(() => {
+                    const copyBtn = document.getElementById('copyTranslationBtn');
+                    const originalText = copyBtn.textContent;
+                    copyBtn.textContent = '✅ Copied!';
+                    setTimeout(() => {
+                        copyBtn.textContent = originalText;
+                    }, 2000);
+                });
+            });
+        }
+    </script>
+</body>
+</html>
