@@ -5,19 +5,20 @@ import datetime
 import random
 import string
 import re
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, UploadFile, Request
 from pydub import AudioSegment
 from google.api_core.client_options import ClientOptions
 from google.cloud.speech_v2 import SpeechClient
 from google.cloud.speech_v2.types import cloud_speech
 from google.cloud import speech
 from google.cloud import storage
+from google.cloud import translate
 from google.protobuf.json_format import MessageToJson
 from celery import Celery
-from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 
 MAX_AUDIO_LENGTH_SECS = 8 * 60 * 60
@@ -27,8 +28,18 @@ os.environ['GOOGLE_APPLICATION_CREDENTIALS']= 'healthorbit-ai.json'
 # Celery setup
 celery_app = Celery("tasks", broker="redis://localhost:6379/0", backend="redis://localhost:6379/1", broker_connection_retry_on_startup=True)
 
-# FastAPI app
-fastapi_app = FastAPI()
+# FastAPI app with increased file upload limits
+fastapi_app = FastAPI(
+    title="Audio Transcription Service",
+    description="Upload audio files for transcription in multiple languages",
+    version="1.0.0"
+)
+
+# Pydantic model for translation request
+class TranslationRequest(BaseModel):
+    text: str
+    source_language: str = "ka"
+    target_language: str = "en"
 
 # Simple root route for testing
 @fastapi_app.get("/")
@@ -39,22 +50,57 @@ async def root():
             "transcribe_english": "/transcribe/",
             "transcribe_georgian": "/transcribe-georgian/",
             "get_result": "/result/{task_id}",
+            "translate": "/translate/",
             "docs": "/docs"
         }
     }
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
+fastapi_app.mount("/static", StaticFiles(directory="static"), name="static")
 
 templates = Jinja2Templates(directory="templates")
 
-@fastapi_app.get("/data", response_class=HTMLResponse)
+@fastapi_app.get("/georgian-transcription", response_class=HTMLResponse)
 async def render_index(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
+# Translation endpoint
+@fastapi_app.post("/translate/")
+async def translate_text(request: TranslationRequest):
+    try:
+        # Try Google Cloud Translate API first
+        try:
+            translate_client = translate.TranslationServiceClient()
+            parent = f"projects/healthorbit-ai/locations/global"
+            
+            response = translate_client.translate_text(
+                request={
+                    "parent": parent,
+                    "contents": [request.text],
+                    "mime_type": "text/plain",
+                    "source_language_code": request.source_language,
+                    "target_language_code": request.target_language,
+                }
+            )
+            
+            translation = response.translations[0].translated_text
+            return {"translation": translation, "method": "google_translate"}
+            
+        except Exception as e:
+            print(f"Google Translate API failed: {e}")
+            # Fallback: return original text with a note
+            return {
+                "translation": f"[Translation service unavailable] {request.text}",
+                "method": "fallback",
+                "error": "Translation service temporarily unavailable"
+            }
+            
+    except Exception as e:
+        return {"error": f"Translation failed: {str(e)}"}
+
 
 # Celery task for transcription
-@celery_app.task
-def process_transcription(audio_path, language_config="english"):
+@celery_app.task(bind=True, time_limit=3600, soft_time_limit=3300)  # 1 hour max, 55 min soft limit
+def process_transcription(self, audio_path, language_config="english"):
     try:
         # Check if input file exists
         if not os.path.exists(audio_path):
@@ -81,10 +127,10 @@ def process_transcription(audio_path, language_config="english"):
         return {"error": str(e)}
 
 # Celery task for Georgian transcription
-@celery_app.task
-def process_georgian_transcription(audio_path):
+@celery_app.task(bind=True, time_limit=3600, soft_time_limit=3300)  # 1 hour max, 55 min soft limit
+def process_georgian_transcription(self, audio_path):
     try:
-        print(audio_path,'-------------dsfds')
+        print(f"Processing Georgian transcription for: {audio_path}")
         
         # Check if input file exists
         if not os.path.exists(audio_path):
@@ -115,10 +161,31 @@ def process_georgian_transcription(audio_path):
 @fastapi_app.post("/transcribe/")
 async def transcribe_audio(file: UploadFile = File(...)):
     try:
+        # Validate file size (max 100MB)
+        MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB in bytes
+        
+        # Read file in chunks to handle large files efficiently
         generatefilename = generate_unique_filename()
         audio_path = f"uploads_audios/{generatefilename + file.filename}"
+        
         with open(audio_path, "wb") as f:
-            f.write(await file.read())
+            total_size = 0
+            chunk_size = 1024 * 1024  # 1MB chunks
+            
+            while True:
+                chunk = await file.read(chunk_size)
+                if not chunk:
+                    break
+                    
+                total_size += len(chunk)
+                if total_size > MAX_FILE_SIZE:
+                    # Clean up partial file
+                    if os.path.exists(audio_path):
+                        os.remove(audio_path)
+                    return {"error": f"File too large. Maximum size is {MAX_FILE_SIZE // (1024*1024)}MB"}
+                
+                f.write(chunk)
+        
         task = process_transcription.delay(audio_path, "english")
         return {"task_id": task.id, "message": "Transcription in progress. Use /result/{task_id} to fetch the result."}
     except Exception as e:
@@ -128,10 +195,31 @@ async def transcribe_audio(file: UploadFile = File(...)):
 @fastapi_app.post("/transcribe-georgian/")
 async def transcribe_georgian_audio(file: UploadFile = File(...)):
     try:
+        # Validate file size (max 100MB)
+        MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB in bytes
+        
+        # Read file in chunks to handle large files efficiently
         generatefilename = generate_unique_filename()
         audio_path = f"uploads_audios/{generatefilename + file.filename}"
+        
         with open(audio_path, "wb") as f:
-            f.write(await file.read())
+            total_size = 0
+            chunk_size = 1024 * 1024  # 1MB chunks
+            
+            while True:
+                chunk = await file.read(chunk_size)
+                if not chunk:
+                    break
+                    
+                total_size += len(chunk)
+                if total_size > MAX_FILE_SIZE:
+                    # Clean up partial file
+                    if os.path.exists(audio_path):
+                        os.remove(audio_path)
+                    return {"error": f"File too large. Maximum size is {MAX_FILE_SIZE // (1024*1024)}MB"}
+                
+                f.write(chunk)
+        
         task = process_georgian_transcription.delay(audio_path)
         return {"task_id": task.id, "message": "Georgian transcription in progress. Use /result/{task_id} to fetch the result."}
     except Exception as e:
@@ -423,7 +511,14 @@ def run_batch_recognize(audio_path, language_config="english"):
             # Use long running recognition with GCS URI
             audio = speech.RecognitionAudio(uri=gcs_uri)
             operation = client.long_running_recognize(config=config, audio=audio)
-            response = operation.result(timeout=90)  # 90 second timeout
+            
+            # Calculate timeout based on audio length (roughly 2x audio duration + 60 seconds buffer)
+            # For safety, cap at 30 minutes maximum
+            audio_duration_estimate = file_size / (16000 * 2)  # Rough estimate in seconds
+            timeout_seconds = min(audio_duration_estimate * 2 + 60, 1800)  # Max 30 minutes
+            
+            print(f"Audio estimated duration: {audio_duration_estimate:.1f}s, using timeout: {timeout_seconds}s")
+            response = operation.result(timeout=timeout_seconds)
             
             # Clean up GCS file
             try:
@@ -458,4 +553,12 @@ def run_batch_recognize(audio_path, language_config="english"):
         
     except Exception as e:
         print(f"Error in run_batch_recognize: {e}")
-        return {"error": f"Transcription failed: {str(e)}"}
+        error_message = str(e)
+        
+        # Handle specific timeout errors
+        if "timeout" in error_message.lower() or "deadline" in error_message.lower():
+            return {"error": "Transcription timed out. Please try with a shorter audio file or contact support."}
+        elif "permission" in error_message.lower():
+            return {"error": "Permission denied. Please check your Google Cloud credentials."}
+        else:
+            return {"error": f"Transcription failed: {error_message}"}

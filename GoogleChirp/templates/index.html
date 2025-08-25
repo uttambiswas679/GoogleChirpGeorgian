@@ -392,7 +392,7 @@
             <div class="result-header">
                 <div class="result-title">📝 Transcription Result</div>
                 <div class="action-buttons">
-                    <button class="translate-btn" id="translateBtn" style="display: none;">🔄 Translate to English</button>
+                    <!-- <button class="translate-btn" id="translateBtn" style="display: none;">🔄 Translate to English</button> -->
                     <button class="copy-btn" id="copyBtn">📋 Copy All</button>
                 </div>
             </div>
@@ -454,10 +454,23 @@
         function handleFileSelect() {
             const file = fileInput.files[0];
             if (file) {
+                const fileSizeMB = (file.size / 1024 / 1024).toFixed(2);
+                const maxSizeMB = 100; // 100MB limit
+                
+                if (file.size > maxSizeMB * 1024 * 1024) {
+                    uploadSection.innerHTML = `
+                        <div class="upload-icon">❌</div>
+                        <div class="upload-text">File too large</div>
+                        <div class="upload-hint">Maximum size: ${maxSizeMB}MB (Current: ${fileSizeMB}MB)</div>
+                    `;
+                    submitBtn.disabled = true;
+                    return;
+                }
+                
                 uploadSection.innerHTML = `
                     <div class="upload-icon">✅</div>
                     <div class="upload-text">${file.name}</div>
-                    <div class="upload-hint">File size: ${(file.size / 1024 / 1024).toFixed(2)} MB</div>
+                    <div class="upload-hint">File size: ${fileSizeMB} MB</div>
                 `;
                 submitBtn.disabled = false;
             }
@@ -492,7 +505,16 @@
                     showError('Upload failed: ' + (result.error || 'Unknown error'));
                 }
             } catch (error) {
-                showError('Network error: ' + error.message);
+                let errorMessage = 'Network error: ' + error.message;
+                
+                // Handle specific HTTP errors
+                if (error.message.includes('413') || error.message.includes('Request Entity Too Large')) {
+                    errorMessage = 'File too large. Please try a smaller audio file (max 100MB).';
+                } else if (error.message.includes('Unexpected token') && error.message.includes('<html>')) {
+                    errorMessage = 'Server error: File upload limit exceeded. Please try a smaller file.';
+                }
+                
+                showError(errorMessage);
             }
         });
 
@@ -501,6 +523,9 @@
             document.getElementById('resultSection').style.display = 'none';
             document.getElementById('translationSection').style.display = 'none';
             submitBtn.disabled = true;
+            
+            // Reset poll count for new transcription
+            window.pollCount = 0;
             
             // Animate progress bar
             let progress = 0;
@@ -525,8 +550,16 @@
                         showResult(result.result);
                     }, 1000);
                 } else if (result.status === 'pending') {
-                    // Continue polling
-                    setTimeout(pollForResult, 2000);
+                    // Continue polling with exponential backoff (max 10 seconds)
+                    const pollCount = (window.pollCount || 0) + 1;
+                    window.pollCount = pollCount;
+                    const delay = Math.min(2000 * Math.pow(1.1, pollCount), 10000);
+                    
+                    // Update progress text to show we're still waiting
+                    document.getElementById('progressText').textContent = 
+                        `Processing your audio... (${Math.floor(pollCount * 2)}s elapsed)`;
+                    
+                    setTimeout(pollForResult, delay);
                 } else {
                     showError('Transcription failed: ' + (result.message || 'Unknown error'));
                 }

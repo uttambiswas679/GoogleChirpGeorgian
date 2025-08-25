@@ -5,16 +5,18 @@ A FastAPI-based application that provides audio transcription services using Goo
 ## Features
 
 - **Multi-language Support**: Transcribe audio in English and Georgian
+- **Translation Support**: Translate Georgian transcripts to English
 - **Asynchronous Processing**: Uses Celery for background task processing
-- **Google Cloud Integration**: Leverages Google Cloud Speech-to-Text API
+- **Google Cloud Integration**: Leverages Google Cloud Speech-to-Text and Translate APIs
 - **Audio Preprocessing**: Supports various audio formats with automatic conversion
+- **Large File Support**: Handles files up to 100MB with efficient chunked uploads
 - **RESTful API**: Clean REST endpoints for easy integration
 
 ## Prerequisites
 
 - Python 3.8+
 - Redis server
-- Google Cloud account with Speech-to-Text API enabled
+- Google Cloud account with Speech-to-Text and Translate APIs enabled
 - Google Cloud Storage buckets configured
 - Google service account credentials
 
@@ -33,10 +35,7 @@ A FastAPI-based application that provides audio transcription services using Goo
 
 3. **Install system dependencies**
    ```bash
-   # Install sox for audio processing
-   sudo apt-get install sox
-   
-   # Install ffmpeg for pydub
+   # Install ffmpeg for pydub audio processing
    sudo apt-get install ffmpeg
    
    # Install Redis
@@ -45,9 +44,10 @@ A FastAPI-based application that provides audio transcription services using Goo
 
 4. **Set up Google Cloud credentials**
    - Download your Google service account key JSON file
-   - Place it in the project root as `credentials.json`
+   - Place it in the project root as `healthorbit-ai.json`
    - Ensure the service account has access to:
      - Speech-to-Text API
+     - Translate API
      - Cloud Storage (for both `healthorbit_bucket` and `ho_georgian` buckets)
 
 5. **Start Redis server**
@@ -64,7 +64,10 @@ A FastAPI-based application that provides audio transcription services using Goo
    - `healthorbit_bucket` (for English transcriptions)
    - `ho_georgian` (for Georgian transcriptions)
 
-2. **Enable Speech-to-Text API** in your Google Cloud project
+2. **Enable APIs** in your Google Cloud project:
+   - Speech-to-Text API
+   - Translate API
+   - Cloud Storage API
 
 3. **Set up recognizers**:
    - English: `projects/healthorbit-24052/locations/us-central1/recognizers/_`
@@ -74,7 +77,7 @@ A FastAPI-based application that provides audio transcription services using Goo
 
 ### Option 1: Using the startup script (Recommended)
 ```bash
-./start.sh
+python run.py
 ```
 
 ### Option 2: Manual setup
@@ -89,138 +92,112 @@ A FastAPI-based application that provides audio transcription services using Goo
    uvicorn app:fastapi_app --host 0.0.0.0 --port 8000 --reload
    ```
 
-3. **Access the API documentation**:
-   - Swagger UI: http://localhost:8000/docs
-   - ReDoc: http://localhost:8000/redoc
+3. **Access the application**:
+   - Web Interface: http://localhost:8000/georgian-transcription
+   - API Documentation: http://localhost:8000/docs
 
 ## API Endpoints
 
 ### 1. English Transcription
 - **POST** `/transcribe/`
 - **Description**: Transcribe audio files in English
-- **Request**: Multipart form with audio file
-- **Response**: Task ID for tracking
+- **File Size Limit**: 100MB
 
 ### 2. Georgian Transcription
 - **POST** `/transcribe-georgian/`
-- **Description**: Transcribe audio files in Georgian (with English fallback)
-- **Request**: Multipart form with audio file
-- **Response**: Task ID for tracking
+- **Description**: Transcribe audio files in Georgian
+- **File Size Limit**: 100MB
 
-### 3. Get Results
+### 3. Translation
+- **POST** `/translate/`
+- **Description**: Translate Georgian text to English
+- **Request Body**:
+  ```json
+  {
+    "text": "გამარჯობა",
+    "source_language": "ka",
+    "target_language": "en"
+  }
+  ```
+
+### 4. Get Results
 - **GET** `/result/{task_id}`
-- **Description**: Retrieve transcription results
-- **Response**: Transcription data or status
+- **Description**: Get transcription results for a task
+
+### 5. Web Interface
+- **GET** `/georgian-transcription`
+- **Description**: Web interface for audio transcription
 
 ## Usage Examples
 
-### Using curl
+### Using the Web Interface
 
-**English Transcription:**
-```bash
-curl -X POST "http://localhost:8000/transcribe/" \
-  -H "accept: application/json" \
-  -H "Content-Type: multipart/form-data" \
-  -F "file=@your_audio_file.mp3"
-```
+1. Open http://localhost:8000/georgian-transcription
+2. Upload an audio file (MP3, WAV, M4A, etc.)
+3. Select language (English or Georgian)
+4. Click "Start Transcription"
+5. Wait for processing to complete
+6. For Georgian transcriptions, click "Translate to English" if needed
 
-**Georgian Transcription:**
+### Using the API
+
 ```bash
+# Transcribe Georgian audio
 curl -X POST "http://localhost:8000/transcribe-georgian/" \
-  -H "accept: application/json" \
   -H "Content-Type: multipart/form-data" \
-  -F "file=@your_georgian_audio.mp3"
+  -F "file=@audio_file.mp3"
+
+# Get results
+curl "http://localhost:8000/result/{task_id}"
+
+# Translate text
+curl -X POST "http://localhost:8000/translate/" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "გამარჯობა", "source_language": "ka", "target_language": "en"}'
 ```
 
-**Get Results:**
-```bash
-curl -X GET "http://localhost:8000/result/{task_id}"
-```
+## File Size Limits
 
-### Using Python
-
-```python
-import requests
-
-# Upload audio for English transcription
-with open('audio_file.mp3', 'rb') as f:
-    response = requests.post(
-        'http://localhost:8000/transcribe/',
-        files={'file': f}
-    )
-    task_id = response.json()['task_id']
-
-# Check results
-result = requests.get(f'http://localhost:8000/result/{task_id}')
-print(result.json())
-```
-
-## Response Format
-
-```json
-{
-  "status": "success",
-  "result": {
-    "transcription": [
-      {
-        "start_time": "0.0s",
-        "end_time": "2.5s",
-        "language_code": "en-US",
-        "confidence": 0.95,
-        "transcript": "Hello, this is a test transcription."
-      }
-    ]
-  }
-}
-```
-
-## Supported Audio Formats
-
-- MP3
-- M4A
-- WAV
-- FLAC
-- OGG
-- And other formats supported by pydub
-
-## Error Handling
-
-The API returns appropriate HTTP status codes:
-- `200`: Success
-- `400`: Bad request
-- `500`: Internal server error
-
-## Monitoring
-
-- Check Celery worker logs for task processing status
-- Monitor Redis for task queue status
-- Use Google Cloud Console to monitor API usage
+- **Maximum file size**: 100MB
+- **Supported formats**: MP3, WAV, M4A, FLAC, OGG
+- **Processing**: Chunked upload for efficient handling
 
 ## Troubleshooting
 
-1. **Redis Connection Issues**:
-   - Ensure Redis server is running: `sudo systemctl status redis-server`
-   - Check Redis connection: `redis-cli ping`
+### Common Issues
 
-2. **Google Cloud Authentication**:
-   - Verify `credentials.json` is in the correct location
+1. **Redis Connection Error**
+   ```bash
+   sudo systemctl start redis-server
+   ```
+
+2. **Google Cloud Credentials**
+   - Ensure `healthorbit-ai.json` is in the project root
+   - Verify API permissions in Google Cloud Console
+
+3. **File Upload Errors**
+   - Check file size (max 100MB)
+   - Verify file format is supported
+   - Ensure uploads_audios/ directory exists
+
+4. **Translation Errors**
+   - Verify Translate API is enabled
    - Check service account permissions
 
-3. **Audio Processing Issues**:
-   - Ensure sox and ffmpeg are installed
-   - Check audio file format compatibility
+## Project Structure
 
-4. **Memory Issues**:
-   - Large audio files may require more memory
-   - Consider chunking very large files
-
-## Status Check
-
-Use the status check script to verify all services are running:
-```bash
-./status_check.sh
+```
+GoogleChirp/
+├── app.py                 # Main FastAPI application
+├── run.py                 # Startup script
+├── requirements.txt       # Python dependencies
+├── healthorbit-ai.json   # Google Cloud credentials
+├── uploads_audios/       # Upload directory
+├── templates/            # HTML templates
+│   └── index.html        # Web interface
+└── README.md            # This file
 ```
 
 ## License
 
-[Add your license information here] 
+This project is licensed under the MIT License. 
